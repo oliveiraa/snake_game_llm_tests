@@ -1,0 +1,448 @@
+<!--
+  Gemstone Snake
+
+  This game was originally a simple snake game created by GPT-OSS.
+  It was then significantly enhanced and polished by Gemini 2.5 Pro
+  based on the prompt: "spice this up significantly so it feels like a
+  much prettier and more polished game."
+
+  The result is a complete visual overhaul with a new 'gemstone' theme,
+  dynamic effects, and new gameplay features.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gemstone Snake</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet">
+<style>
+  :root {
+    --bg-color-1: #1a1a2e;
+    --bg-color-2: #16213e;
+    --bg-color-3: #0f3460;
+    --grid-color: rgba(255, 255, 255, 0.05);
+    --snake-head-color: #7df9ff;
+    --snake-head-gradient: linear-gradient(135deg, #7df9ff, #4a90e2);
+    --snake-body-color: #4a90e2;
+    --snake-body-gradient: linear-gradient(135deg, #4a90e2, #2a52be);
+    --food-color: #ffcc00;
+    --food-glow: 0 0 15px #ffcc00;
+    --text-color: #f0f0f0;
+    --overlay-bg: rgba(15, 20, 40, 0.9);
+    --border-color: #537895;
+  }
+
+  @keyframes background-pan {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  body {
+    margin: 0;
+    height: 100vh;
+    background: linear-gradient(90deg, var(--bg-color-1), var(--bg-color-2), var(--bg-color-3), var(--bg-color-2), var(--bg-color-1));
+    background-size: 400% 400%;
+    animation: background-pan 30s ease infinite;
+    font-family: "Press Start 2P", cursive;
+    color: var(--text-color);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  canvas {
+    background-color: transparent;
+    border: 4px solid var(--border-color);
+    box-shadow: 0 0 30px rgba(74, 144, 226, 0.5);
+    image-rendering: pixelated;
+  }
+
+  @keyframes screen-shake {
+    0%, 100% { transform: translate(0, 0); }
+    20%, 60% { transform: translate(-3px, 2px); }
+    40%, 80% { transform: translate(3px, -2px); }
+  }
+
+  .shake {
+    animation: screen-shake 0.3s;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay-bg);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+
+  .visible { opacity: 1; }
+
+  .overlay strong {
+    color: var(--snake-head-color);
+    text-shadow: 0 0 5px var(--snake-head-color);
+  }
+
+  #score, #highScore {
+    position: absolute;
+    top: 1rem;
+    font-size: 1rem;
+    background: rgba(0,0,0,0.5);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 2px solid var(--border-color);
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  }
+  #score { right: 1rem; }
+  #highScore { left: 1rem; }
+
+</style>
+</head>
+<body>
+
+<canvas id="game" width="400" height="400"></canvas>
+<div id="score">Score: 0</div>
+<div id="highScore">High Score: 0</div>
+
+<div id="startOverlay" class="overlay visible">
+  <div>
+    <p>Press <strong>Space</strong> to start</p>
+    <p>Use <strong>← ↑ → ↓</strong> to move</p>
+  </div>
+</div>
+
+<div id="pauseOverlay" class="overlay">
+  <p>Paused – press <strong>Space</strong> to resume</p>
+</div>
+
+<div id="gameOverOverlay" class="overlay">
+  <p id="gameOverMsg"></p>
+  <p>Press <strong>Space</strong> to play again</p>
+</div>
+
+<script>
+/* --------------------------------------------------------------
+   Gemstone Snake - A Polished Snake Game by Gemini
+   --------------------------------------------------------------*/
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highScore');
+
+const startOverlay   = document.getElementById('startOverlay');
+const pauseOverlay   = document.getElementById('pauseOverlay');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const gameOverMsg   = document.getElementById('gameOverMsg');
+
+const cfg = {
+  rows: 20,
+  cols: 20,
+  cellSize: 20,
+  speed: 12, // cells per second
+};
+
+let snake, dir, food, score, highScore, lastTick, running, paused, particles;
+
+// --------------------------------------------------------------
+// Helper functions
+// --------------------------------------------------------------
+function randomCell() {
+  return {
+    x: Math.floor(Math.random() * cfg.cols),
+    y: Math.floor(Math.random() * cfg.rows),
+  };
+}
+
+function createParticles(x, y) {
+    const particleCount = 25;
+    const foodColor = getComputedStyle(document.documentElement).getPropertyValue('--food-color').trim();
+    for (let i = 0; i < particleCount; i++) {
+        particles.push({
+            x: x * cfg.cellSize + cfg.cellSize / 2,
+            y: y * cfg.cellSize + cfg.cellSize / 2,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
+            size: Math.random() * 3 + 2,
+            lifespan: Math.random() * 40 + 20,
+            color: foodColor,
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.lifespan--;
+        if (p.lifespan <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function drawGem(x, y, size, fillStyle) {
+    const r = size / 3; // radius for corners
+    ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + size - r, y);
+    ctx.quadraticCurveTo(x + size, y, x + size, y + r);
+    ctx.lineTo(x + size, y + size - r);
+    ctx.quadraticCurveTo(x + size, y + size, x + size - r, y + size);
+    ctx.lineTo(x + r, y + size);
+    ctx.quadraticCurveTo(x, y + size, x, y + size - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Shine effect
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arc(x + size / 2, y + size / 2, size / 2.5, Math.PI * 1.55, Math.PI * 1.95);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function drawGrid() {
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid-color').trim();
+    ctx.lineWidth = 1;
+    for (let i = 1; i < cfg.cols; i++) {
+        const x = i * cfg.cellSize;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+    }
+    for (let j = 1; j < cfg.rows; j++) {
+        const y = j * cfg.cellSize;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+    }
+}
+
+// --------------------------------------------------------------
+// Game logic
+// --------------------------------------------------------------
+function initGame() {
+  snake = [{ x: Math.floor(cfg.cols/2), y: Math.floor(cfg.rows/2) }];
+  dir   = { x: 0, y: 0 };
+  food  = randomCell();
+  score = 0;
+  scoreEl.textContent = 'Score: 0';
+  highScore = parseInt(localStorage.getItem('snakeHighScore')) || 0;
+  highScoreEl.textContent = `High Score: ${highScore}`;
+  lastTick = performance.now();
+  running = false;
+  paused  = false;
+  particles = [];
+
+  startOverlay.classList.add('visible');
+  pauseOverlay.classList.remove('visible');
+  gameOverOverlay.classList.remove('visible');
+
+  render(); // draw initial board
+}
+
+function gameLoop(now) {
+  if (!running) return;
+
+  const delta = now - lastTick;
+  const stepMs = 1000 / cfg.speed;
+
+  if (delta >= stepMs) {
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+    head.x = (head.x + cfg.cols) % cfg.cols;
+    head.y = (head.y + cfg.rows) % cfg.rows;
+
+    if (snake.some(p => p.x === head.x && p.y === head.y)) {
+      endGame();
+      return;
+    }
+
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+      score++;
+      scoreEl.textContent = `Score: ${score}`;
+      createParticles(food.x, food.y);
+      food = randomCell();
+    } else {
+      snake.pop();
+    }
+
+    lastTick = now;
+  }
+
+  updateParticles();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// --------------------------------------------------------------
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawGrid();
+
+    // ---- Draw Food (glowing gem) ----
+    const pulse = Math.sin(performance.now() / 150) * 4 + 8;
+    const foodX = food.x * cfg.cellSize;
+    const foodY = food.y * cfg.cellSize;
+
+    ctx.shadowColor = getComputedStyle(document.documentElement).getPropertyValue('--food-color').trim();
+    ctx.shadowBlur = pulse;
+    drawGem(foodX, foodY, cfg.cellSize, ctx.shadowColor);
+    ctx.shadowBlur = 0; // Reset shadow
+
+    // ---- Draw Snake (gemstone segments) ----
+    snake.forEach((seg, i) => {
+        const x = seg.x * cfg.cellSize;
+        const y = seg.y * cfg.cellSize;
+        let grad;
+
+        if (i === 0) {
+            // Head
+            grad = ctx.createLinearGradient(x, y, x + cfg.cellSize, y + cfg.cellSize);
+            grad.addColorStop(0, '#7df9ff'); // --snake-head-color
+            grad.addColorStop(1, '#4a90e2');
+            drawGem(x, y, cfg.cellSize, grad);
+
+            // Eyes
+            const eyeSize = cfg.cellSize / 6;
+            const eyeOffset = cfg.cellSize / 4;
+            const centerX = x + cfg.cellSize / 2;
+            const centerY = y + cfg.cellSize / 2;
+
+            let eye1_x, eye1_y, eye2_x, eye2_y;
+            const currentDir = (dir.x === 0 && dir.y === 0) ? {x: 1, y: 0} : dir;
+
+            if (currentDir.y === -1) { // Up
+                eye1_x = centerX - eyeOffset; eye1_y = centerY - eyeOffset;
+                eye2_x = centerX + eyeOffset; eye2_y = centerY - eyeOffset;
+            } else if (currentDir.y === 1) { // Down
+                eye1_x = centerX - eyeOffset; eye1_y = centerY + eyeOffset;
+                eye2_x = centerX + eyeOffset; eye2_y = centerY + eyeOffset;
+            } else if (currentDir.x === -1) { // Left
+                eye1_x = centerX - eyeOffset; eye1_y = centerY - eyeOffset;
+                eye2_x = centerX - eyeOffset; eye2_y = centerY + eyeOffset;
+            } else { // Right
+                eye1_x = centerX + eyeOffset; eye1_y = centerY - eyeOffset;
+                eye2_x = centerX + eyeOffset; eye2_y = centerY + eyeOffset;
+            }
+
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.arc(eye1_x, eye1_y, eyeSize, 0, 2 * Math.PI);
+            ctx.arc(eye2_x, eye2_y, eyeSize, 0, 2 * Math.PI);
+            ctx.fill();
+
+        } else {
+            // Body
+            grad = ctx.createLinearGradient(x, y, x + cfg.cellSize, y + cfg.cellSize);
+            grad.addColorStop(0, '#4a90e2'); // --snake-body-color
+            grad.addColorStop(1, '#2a52be');
+            drawGem(x, y, cfg.cellSize, grad);
+        }
+    });
+
+    // ---- Draw Particles ----
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, p.lifespan / 40); // Fade out
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, 2 * Math.PI);
+        ctx.fill();
+    });
+    ctx.globalAlpha = 1.0; // Reset alpha
+}
+
+// --------------------------------------------------------------
+function startPlay() {
+  // hide start overlay, start moving right
+  startOverlay.classList.remove('visible');
+  dir = { x: 1, y: 0 };
+  running = true;
+  paused = false;
+  requestAnimationFrame(gameLoop);
+}
+
+// --------------------------------------------------------------
+function togglePause() {
+  if (!running) return; // nothing to pause
+
+  paused = !paused;
+  if (paused) {
+    pauseOverlay.classList.add('visible');
+    running = false; // stop the loop
+  } else {
+    pauseOverlay.classList.remove('visible');
+    running = true;
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+// --------------------------------------------------------------
+function endGame() {
+  running = false;
+
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('snakeHighScore', highScore);
+    highScoreEl.textContent = `High Score: ${highScore}`;
+  }
+
+  gameOverMsg.textContent = `Game Over! Your score: ${score}`;
+  gameOverOverlay.classList.add('visible');
+
+  canvas.classList.add('shake');
+  setTimeout(() => canvas.classList.remove('shake'), 400);
+}
+
+// --------------------------------------------------------------
+document.addEventListener('keydown', e => {
+  switch (e.key) {
+    case 'ArrowUp':
+      if (dir.y !== 1) dir = { x: 0, y: -1 };
+      break;
+    case 'ArrowDown':
+      if (dir.y !== -1) dir = { x: 0, y: 1 };
+      break;
+    case 'ArrowLeft':
+      if (dir.x !== 1) dir = { x: -1, y: 0 };
+      break;
+    case 'ArrowRight':
+      if (dir.x !== -1) dir = { x: 1, y: 0 };
+      break;
+    case ' ':
+      if (!running && !paused) {
+        // first press → start the game
+        startPlay();
+      } else if (paused) {
+        togglePause(); // resume
+      } else {
+        togglePause(); // pause
+      }
+      break;
+  }
+});
+
+// --------------------------------------------------------------
+initGame();
+</script>
+</body>
+</html>
