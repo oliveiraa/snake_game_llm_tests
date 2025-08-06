@@ -1,0 +1,304 @@
+<!--
+  Snake Game - GPT-OSS Edition
+  
+  Model: GPT-OSS 120B (server deployment)
+  Generation: 3-shot approach
+  - Shot 1: "Write me a snake game in HTML/CSS/JS"
+  - Shot 2: "Make it nicer"
+  - Shot 3: "Make it nicer" (final refinement)
+  
+  Result: Neon-styled Snake with smooth animations, pause functionality,
+  and polished overlays. Required iterative refinement to reach this level.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Neon Snake</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet">
+<style>
+  :root {
+    --bg-dark: #0a0a0a;
+    --grid:   #1a1a1a;
+    --snake-head: #00ff9f;
+    --snake-body: #00c37a;
+    --food:   #ff4d4d;
+    --overlay-bg: rgba(0,0,0,0.85);
+    --text:   #e0e0e0;
+  }
+
+  body {
+    margin: 0;
+    height: 100vh;
+    background: var(--bg-dark);
+    font-family: "Press Start 2P", cursive;
+    color: var(--text);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  canvas {
+    background: var(--grid);
+    border: 4px solid #222;
+    image-rendering: pixelated;
+    box-shadow: 0 0 20px #00ff9f;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay-bg);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+
+  .visible { opacity: 1; }
+
+  #score {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1rem;
+    background: rgba(0,0,0,0.5);
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="400" height="400"></canvas>
+<div id="score">Score: 0</div>
+
+<div id="startOverlay" class="overlay visible">
+  <div>
+    <p>Press <strong>Space</strong> to start</p>
+    <p>Use <strong>← ↑ → ↓</strong> to move</p>
+  </div>
+</div>
+
+<div id="pauseOverlay" class="overlay">
+  <p>Paused – press <strong>Space</strong> to resume</p>
+</div>
+
+<div id="gameOverOverlay" class="overlay">
+  <p id="gameOverMsg"></p>
+  <p>Press <strong>Space</strong> to play again</p>
+</div>
+
+<script>
+/* --------------------------------------------------------------
+   Neon Snake – single‑file, richer design
+   --------------------------------------------------------------*/
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+const startOverlay   = document.getElementById('startOverlay');
+const pauseOverlay   = document.getElementById('pauseOverlay');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const gameOverMsg   = document.getElementById('gameOverMsg');
+
+const cfg = {
+  rows: 20,
+  cols: 20,
+  cellSize: 20,
+  // speed expressed as cells per second
+  speed: 12,
+};
+
+let snake, dir, food, score, lastTick, running, paused;
+
+// --------------------------------------------------------------
+// Helper functions
+// --------------------------------------------------------------
+function randomCell() {
+  return {
+    x: Math.floor(Math.random() * cfg.cols),
+    y: Math.floor(Math.random() * cfg.rows),
+  };
+}
+
+function drawRoundedRect(x, y, w, h, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// --------------------------------------------------------------
+// Game logic
+// --------------------------------------------------------------
+function initGame() {
+  snake = [{ x: Math.floor(cfg.cols/2), y: Math.floor(cfg.rows/2) }];
+  dir   = { x: 0, y: 0 };          // no movement until first tick
+  food  = randomCell();
+  score = 0;
+  scoreEl.textContent = 'Score: 0';
+  lastTick = performance.now();
+  running = false;
+  paused  = false;
+
+  // hide all overlays, show start screen
+  startOverlay.classList.add('visible');
+  pauseOverlay.classList.remove('visible');
+  gameOverOverlay.classList.remove('visible');
+
+  render(); // draw initial board
+}
+
+// --------------------------------------------------------------
+function gameLoop(now) {
+  if (!running) return; // stopped (paused or game‑over)
+
+  const delta = now - lastTick;
+  const stepMs = 1000 / cfg.speed; // ms per cell movement
+
+  if (delta >= stepMs) {
+    // ---- move snake -------------------------------------------------
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    // wrap around
+    head.x = (head.x + cfg.cols) % cfg.cols;
+    head.y = (head.y + cfg.rows) % cfg.rows;
+
+    // self‑collision
+    if (snake.some(p => p.x === head.x && p.y === head.y)) {
+      endGame();
+      return;
+    }
+
+    snake.unshift(head);
+
+    // eat food?
+    if (head.x === food.x && head.y === food.y) {
+      score++;
+      scoreEl.textContent = `Score: ${score}`;
+      food = randomCell();
+    } else {
+      snake.pop(); // keep length constant
+    }
+
+    lastTick = now;
+  }
+
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// --------------------------------------------------------------
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // ---- draw food (pulsing) -----------------------------------------
+  const pulse = Math.sin(performance.now() / 200) * 0.3 + 0.7;
+  const foodColor = `rgba(255,77,77,${pulse})`;
+  drawRoundedRect(
+    food.x * cfg.cellSize,
+    food.y * cfg.cellSize,
+    cfg.cellSize,
+    cfg.cellSize,
+    4,
+    foodColor
+  );
+
+  // ---- draw snake ---------------------------------------------------
+  snake.forEach((seg, i) => {
+    const color = i === 0 ? 'var(--snake-head)' : 'var(--snake-body)';
+    drawRoundedRect(
+      seg.x * cfg.cellSize,
+      seg.y * cfg.cellSize,
+      cfg.cellSize,
+      cfg.cellSize,
+      4,
+      color
+    );
+  });
+}
+
+// --------------------------------------------------------------
+function startPlay() {
+  // hide start overlay, start moving right
+  startOverlay.classList.remove('visible');
+  dir = { x: 1, y: 0 };
+  running = true;
+  paused = false;
+  requestAnimationFrame(gameLoop);
+}
+
+// --------------------------------------------------------------
+function togglePause() {
+  if (!running) return; // nothing to pause
+
+  paused = !paused;
+  if (paused) {
+    pauseOverlay.classList.add('visible');
+    running = false; // stop the loop
+  } else {
+    pauseOverlay.classList.remove('visible');
+    running = true;
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+// --------------------------------------------------------------
+function endGame() {
+  running = false;
+  gameOverMsg.textContent = `Game Over! Your score: ${score}`;
+  gameOverOverlay.classList.add('visible');
+}
+
+// --------------------------------------------------------------
+document.addEventListener('keydown', e => {
+  switch (e.key) {
+    case 'ArrowUp':
+      if (dir.y !== 1) dir = { x: 0, y: -1 };
+      break;
+    case 'ArrowDown':
+      if (dir.y !== -1) dir = { x: 0, y: 1 };
+      break;
+    case 'ArrowLeft':
+      if (dir.x !== 1) dir = { x: -1, y: 0 };
+      break;
+    case 'ArrowRight':
+      if (dir.x !== -1) dir = { x: 1, y: 0 };
+      break;
+    case ' ':
+      if (!running && !paused) {
+        // first press → start the game
+        startPlay();
+      } else if (paused) {
+        togglePause(); // resume
+      } else {
+        togglePause(); // pause
+      }
+      break;
+  }
+});
+
+// --------------------------------------------------------------
+initGame();
+</script>
+</body>
+</html>
